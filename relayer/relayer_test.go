@@ -142,12 +142,12 @@ func TestMessagePriroty(t *testing.T) {
 	msgrelayer.SubscribeToMessages(constants.ReceivedAnswer, s.Channel(constants.ReceivedAnswer))
 	ctx, cancel := context.WithCancel(context.Background())
 	go s.Start(ctx)
-	go msgrelayer.Start(ctx)
 	/*
 	 * enqueue both message types
 	 */
 	msgrelayer.Enqueue(constants.Message{Type: constants.ReceivedAnswer, Data: []byte("recievedAns")})
 	msgrelayer.Enqueue(constants.Message{Type: constants.StartNewRound, Data: []byte("startNewRound")})
+	go msgrelayer.Start(ctx)
 	resultChan := make(chan constants.Message)
 	// read only a single message off the queues
 	go func(result chan constants.Message, startNewRoundChan chan constants.Message, recievedAnsChan chan constants.Message) {
