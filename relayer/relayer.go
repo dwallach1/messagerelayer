@@ -63,9 +63,10 @@ func (mr *MessageRelayer) Start(ctx context.Context) {
 	log.Printf("message relayer starting with %v RecievedAnswer subscribers and %v StartNewRound subsribers", len(mr.subscribers[constants.ReceivedAnswer]), len(mr.subscribers[constants.StartNewRound]))
 	for {
 		select {
+		// start round queue takes precedent over the recieved answer queue
 		case msg := <-mr.startRoundQueue:
 			subscriberChannels := mr.subscribers[constants.StartNewRound]
-			log.Printf("🔊 boradcasting start new round message")
+			log.Printf("🔊 broadcasting start new round message")
 			for _, subscriberChannel := range subscriberChannels {
 				if utils.ChannelIsFull(subscriberChannel) {
 					mr.skippedMsgCount++
@@ -77,7 +78,7 @@ func (mr *MessageRelayer) Start(ctx context.Context) {
 			}
 		case msg := <-mr.recievedAnswerQueue:
 			subscriberChannels := mr.subscribers[constants.ReceivedAnswer]
-			log.Printf("🔊 boradcasting recieved answer message")
+			log.Printf("🔊  broadcasting recieved answer message")
 			for _, subscriberChannel := range subscriberChannels {
 				if utils.ChannelIsFull(subscriberChannel) {
 					mr.skippedMsgCount++
