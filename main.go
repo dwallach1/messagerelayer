@@ -22,9 +22,8 @@ type MockNetworkSocket struct {
 	ProcessedMsgs            *int
 }
 
-var i = 0
-
 func (mns MockNetworkSocket) Read() (constants.Message, error) {
+	i := 0 // just used for mock messages
 	i++
 	return constants.Message{
 		Type: []constants.MessageType{constants.StartNewRound, constants.ReceivedAnswer}[i%2],
