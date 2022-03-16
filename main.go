@@ -64,7 +64,6 @@ func main() {
 	msgRelayer := relayer.NewMessageRelayer(MockNetworkSocket{})
 	msgPoller := poller.New(READ_INTERVAL_SECS * time.Second)
 	go handleSigInt(cancel, msgRelayer, msgPoller)
-	log.Printf("starting service with read interval set to %v seconds...", READ_INTERVAL_SECS)
 	/*
 	 * Add subscribers
 	 */
