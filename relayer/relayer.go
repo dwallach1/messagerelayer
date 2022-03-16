@@ -4,9 +4,20 @@ import (
 	"context"
 	"log"
 	"messagerelayer/constants"
+	"messagerelayer/utils"
+	"time"
 )
 
 const queueSize = 10
+
+var ReadInterval = 5 * time.Second
+
+type WorkSummary struct {
+	QueuedMsgs      int // successfully added messages to queue to be broadcasted
+	BroadcastedMsgs int // successfully broadcasted to a subscriber
+	DiscardedMsgs   int // queus full so we discarded older messages
+	SkippedMsgs     int // subscriber busy so we dropped the message
+}
 
 type Relayer interface {
 	Start(context.Context)
@@ -15,8 +26,7 @@ type Relayer interface {
 	SubscribeToMessages(msgType constants.MessageType, ch chan constants.Message)
 	DoneChannel() chan bool
 	// helpers for test validation
-	QueuedMsgs() int
-	BroadcastedMsgs() int
+	Summary() WorkSummary
 }
 
 type NetworkSocket interface {
@@ -31,6 +41,8 @@ func NewMessageRelayer(socket NetworkSocket) Relayer {
 		subscribers:          make(map[constants.MessageType][]chan constants.Message),
 		queuesMsgsCount:      0,
 		broadcastedMsgsCount: 0,
+		discardedMsgsCount:   0,
+		skippedMsgCount:      0,
 		done:                 make(chan bool),
 	}
 }
@@ -42,6 +54,8 @@ type MessageRelayer struct {
 	subscribers          map[constants.MessageType][]chan constants.Message // message type -> array of message channels
 	queuesMsgsCount      int
 	broadcastedMsgsCount int
+	discardedMsgsCount   int
+	skippedMsgCount      int
 	done                 chan bool
 }
 
@@ -53,9 +67,10 @@ func (mr *MessageRelayer) Start(ctx context.Context) {
 			subscriberChannels := mr.subscribers[constants.StartNewRound]
 			log.Printf("🔊 boradcasting start new round message")
 			for _, subscriberChannel := range subscriberChannels {
-				if channelIsFull(subscriberChannel) {
-					log.Printf("discarding message of full StartNewRound channel")
-					discardChannelMsg(subscriberChannel)
+				if utils.ChannelIsFull(subscriberChannel) {
+					mr.skippedMsgCount++
+					log.Printf("subscriber busy: detected full StartNewRound subscriber channel: skipping broadcast")
+					continue
 				}
 				mr.broadcastedMsgsCount++
 				subscriberChannel <- msg
@@ -64,9 +79,10 @@ func (mr *MessageRelayer) Start(ctx context.Context) {
 			subscriberChannels := mr.subscribers[constants.ReceivedAnswer]
 			log.Printf("🔊 boradcasting recieved answer message")
 			for _, subscriberChannel := range subscriberChannels {
-				if channelIsFull(subscriberChannel) {
-					log.Printf("discarding message of full ReceivedAnswer channel")
-					discardChannelMsg(subscriberChannel)
+				if utils.ChannelIsFull(subscriberChannel) {
+					mr.skippedMsgCount++
+					log.Printf("subscriber busy: detected full ReceivedAnswer subscriber channel: skipping broadcast")
+					continue
 				}
 				mr.broadcastedMsgsCount++
 				subscriberChannel <- msg
@@ -75,6 +91,8 @@ func (mr *MessageRelayer) Start(ctx context.Context) {
 			log.Printf("closing message relayer:: queued: %v messages, broadcasted: %v messages", mr.queuesMsgsCount, mr.broadcastedMsgsCount)
 			mr.done <- true
 			return
+		default:
+			time.Sleep(ReadInterval)
 		}
 	}
 }
@@ -85,11 +103,21 @@ func (mr MessageRelayer) Read() (constants.Message, error) {
 
 func (mr *MessageRelayer) Enqueue(msg constants.Message) {
 	if msg.Type == constants.ReceivedAnswer || msg.Type == constants.All {
+		// if our queues are full, we need to discard a message so we can keep most recent messages in queue
+		if utils.ChannelIsFull(mr.recievedAnswerQueue) {
+			utils.DiscardChannelMsg(mr.recievedAnswerQueue)
+			mr.discardedMsgsCount++
+		}
 		mr.recievedAnswerQueue <- msg
 		mr.queuesMsgsCount++
 		log.Println("⤴️  added new message to recieved answer queue")
 	}
 	if msg.Type == constants.StartNewRound || msg.Type == constants.All {
+		// if our queues are full, we need to discard a message so we can keep most recent messages in queue
+		if utils.ChannelIsFull(mr.startRoundQueue) {
+			utils.DiscardChannelMsg(mr.startRoundQueue)
+			mr.discardedMsgsCount++
+		}
 		mr.startRoundQueue <- msg
 		mr.queuesMsgsCount++
 		log.Println("⤴️  added new message to start round queue")
@@ -109,18 +137,11 @@ func (mr MessageRelayer) DoneChannel() chan bool {
 	return mr.done
 }
 
-func (mr MessageRelayer) QueuedMsgs() int {
-	return mr.queuesMsgsCount
-}
-
-func (mr MessageRelayer) BroadcastedMsgs() int {
-	return mr.broadcastedMsgsCount
-}
-
-func channelIsFull(ch chan constants.Message) bool {
-	return len(ch) == cap(ch)
-}
-
-func discardChannelMsg(ch chan constants.Message) {
-	<-ch
+func (mr MessageRelayer) Summary() WorkSummary {
+	return WorkSummary{
+		QueuedMsgs:      mr.queuesMsgsCount,
+		BroadcastedMsgs: mr.broadcastedMsgsCount,
+		DiscardedMsgs:   mr.discardedMsgsCount,
+		SkippedMsgs:     mr.skippedMsgCount,
+	}
 }

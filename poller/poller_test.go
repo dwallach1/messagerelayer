@@ -36,6 +36,7 @@ func TestStartMessageRelayer(t *testing.T) {
 	cancel()
 	<-msgrelayer.DoneChannel()
 	<-msgpoller.DoneChannel()
-	assert.GreaterOrEqual(t, msgrelayer.QueuedMsgs(), 4, "queued message count")
-	assert.Equal(t, 0, msgrelayer.BroadcastedMsgs(), "broadcasted message count should be 0 since we have no subscribers")
+	summary := msgrelayer.Summary()
+	assert.GreaterOrEqual(t, summary.QueuedMsgs, 4, "queued message count")
+	assert.Equal(t, 0, summary.BroadcastedMsgs, "broadcasted message count should be 0 since we have no subscribers")
 }

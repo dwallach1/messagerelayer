@@ -105,3 +105,49 @@ func (ms *MockSubscriber) Start(ctx context.Context) {
 		}
 	}
 }
+
+type NoopSubscriber struct {
+	done      chan bool
+	msgQueues QueueMap
+}
+
+func NewNoop(queueSize int) Subscriber {
+	queues := QueueMap{}
+	queues[constants.ReceivedAnswer] = make(chan constants.Message, queueSize)
+	queues[constants.StartNewRound] = make(chan constants.Message, queueSize)
+	return &NoopSubscriber{
+		msgQueues: queues,
+		done:      make(chan bool),
+	}
+}
+
+// Start begins the subscriber to listen for new messages from the message relayer
+func (ns *NoopSubscriber) Start(ctx context.Context) {
+	<-ctx.Done()
+	ns.done <- true
+}
+
+func (ns NoopSubscriber) Name() string {
+	return "noop subscriber"
+}
+
+func (ns NoopSubscriber) ProcessedCount() int {
+	return 0
+}
+
+func (ns NoopSubscriber) WaitTime() time.Duration {
+	return 0 * time.Second
+}
+
+func (ns NoopSubscriber) DoneChannel() chan bool {
+	return ns.done
+}
+
+func (ns NoopSubscriber) Type() constants.MessageType {
+	return constants.All
+}
+
+// Cahnnel returns the subscribers associated channel
+func (ns NoopSubscriber) Channel(msgType constants.MessageType) chan constants.Message {
+	return ns.msgQueues.Get(msgType)
+}

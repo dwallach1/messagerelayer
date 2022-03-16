@@ -83,7 +83,7 @@ func main() {
 	/*
 	 * Start service
 	 */
-	log.Println("starting message relayer...")
+	log.Println("starting message relayer & poller...")
 	go msgRelayer.Start(rootCtx)
 	go msgPoller.Start(rootCtx, msgRelayer)
 	select {} // block until sigint detected
