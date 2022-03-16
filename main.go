@@ -19,15 +19,14 @@ const READ_INTERVAL_SECS = 5
 type MockNetworkSocket struct {
 	Messages                 []constants.Message
 	DelaySecsBetweenMessages func(int) time.Duration // take in the number of messages and return a delay
-	ProcessedMsgs            *int
+	ProcessedMsgs            int
 }
 
-func (mns MockNetworkSocket) Read() (constants.Message, error) {
-	i := 0 // just used for mock messages
-	i++
+func (mns *MockNetworkSocket) Read() (constants.Message, error) {
+	mns.ProcessedMsgs++
 	return constants.Message{
-		Type: []constants.MessageType{constants.StartNewRound, constants.ReceivedAnswer}[i%2],
-		Data: []byte(fmt.Sprintf("mock message %v", i)),
+		Type: []constants.MessageType{constants.StartNewRound, constants.ReceivedAnswer}[mns.ProcessedMsgs%2],
+		Data: []byte(fmt.Sprintf("mock message %v", mns.ProcessedMsgs)),
 	}, nil
 }
 
@@ -60,7 +59,7 @@ func main() {
 	 * Service configuration and setup
 	 */
 	rootCtx, cancel := context.WithCancel(context.Background())
-	msgRelayer := relayer.NewMessageRelayer(MockNetworkSocket{})
+	msgRelayer := relayer.NewMessageRelayer(&MockNetworkSocket{ProcessedMsgs: 0})
 	msgPoller := poller.New(READ_INTERVAL_SECS * time.Second)
 	go handleSigInt(cancel, msgRelayer, msgPoller)
 	/*
