@@ -31,6 +31,30 @@ func (mns MockNetworkSocket) Read() (constants.Message, error) {
 	}, nil
 }
 
+/*
+* Setup mock subscribers
+ */
+var subscribers = []subscriber.Subscriber{
+	subscriber.New(
+		constants.ReceivedAnswer,
+		func() time.Duration { return time.Second * 3 },
+		5,
+		"joe",
+	),
+	subscriber.New(
+		constants.StartNewRound,
+		func() time.Duration { return time.Second * 3 },
+		5,
+		"bob",
+	),
+	subscriber.New(
+		constants.All,
+		func() time.Duration { return time.Second * 3 },
+		5,
+		"sally",
+	),
+}
+
 func main() {
 	/*
 	 * Service configuration and setup
@@ -38,32 +62,9 @@ func main() {
 	rootCtx, cancel := context.WithCancel(context.Background())
 	msgRelayer := relayer.NewMessageRelayer(MockNetworkSocket{})
 	stopPollingChan := make(chan bool)
-	go handleSigInt(stopPollingChan, cancel)
+	go handleSigInt(stopPollingChan, cancel, msgRelayer)
 	log.Printf("starting service with read interval set to %v seconds...", READ_INTERVAL_SECS)
 
-	/*
-	 * Setup mock subscribers
-	 */
-	subscribers := []subscriber.Subscriber{
-		subscriber.New(
-			constants.ReceivedAnswer,
-			func() time.Duration { return time.Second * 3 },
-			5,
-			"joe",
-		),
-		subscriber.New(
-			constants.StartNewRound,
-			func() time.Duration { return time.Second * 3 },
-			5,
-			"bob",
-		),
-		subscriber.New(
-			constants.All,
-			func() time.Duration { return time.Second * 3 },
-			5,
-			"sally",
-		),
-	}
 	for _, s := range subscribers {
 		subscriberType := s.Type()
 		if subscriberType == constants.StartNewRound || subscriberType == constants.All {
@@ -98,25 +99,33 @@ func pollMsgs(ctx context.Context, msgRelayer relayer.Relayer, stop chan bool) {
 			msgRelayer.Enqueue(msg)
 		case <-stop:
 			ticker.Stop()
-			log.Println("closed poller...")
+			log.Println("closed poller")
 			return
 		case <-ctx.Done():
 			ticker.Stop()
-			log.Println("closed poller...")
+			log.Println("closed poller")
 			return
 		}
 	}
 }
 
-func handleSigInt(stopPollingChan chan bool, cancel context.CancelFunc) {
+func handleSigInt(stopPollingChan chan bool, cancel context.CancelFunc, msgRelayer relayer.Relayer) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
 	log.Println("detected signal interrupt, cleaning up and exiting..")
 	stopPollingChan <- true
 	cancel()
-	time.Sleep(5 * time.Second) // let things shut down gracefully
-	// @todo do we need to do this
+	// wait for all subscribers to close gracefully
+	for _, s := range subscribers {
+		<-s.DoneChannel()
+		close(s.DoneChannel())
+		log.Printf("subscriber %v is now closed", s.Name())
+	}
+	// wait for message relayer to close gracefully
+	<-msgRelayer.DoneChannel()
+	log.Printf("message relayer is now closed")
+	close(msgRelayer.DoneChannel())
 	log.Println("exiting gracefully")
 	os.Exit(0)
 }

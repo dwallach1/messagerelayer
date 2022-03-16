@@ -91,13 +91,13 @@ func (ms *MockSubscriber) Start(ctx context.Context) {
 	for {
 		select {
 		case msg := <-ms.msgQueues.Get(constants.StartNewRound):
-			log.Printf("<<>> %v reading new start round message: %+v", ms.name, string(msg.Data))
+			log.Printf("👨 %v reading new start round message: %+v", ms.name, string(msg.Data))
 			ms.processedCount++
 		case msg := <-ms.msgQueues.Get(constants.ReceivedAnswer):
-			log.Printf("<<>> %v reading new recieved answer message: %+v", ms.name, string(msg.Data))
+			log.Printf("👨 %v reading new recieved answer message: %+v", ms.name, string(msg.Data))
 			ms.processedCount++
 		case <-ctx.Done():
-			log.Printf("closed subscriber %v who processed %v messages", ms.name, ms.processedCount)
+			log.Printf("closing subscriber %v who processed %v messages", ms.name, ms.processedCount)
 			ms.done <- true
 			return
 		default:
