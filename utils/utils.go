@@ -11,3 +11,12 @@ func ChannelIsFull(ch chan constants.Message) bool {
 func DiscardChannelMsg(ch chan constants.Message) {
 	<-ch
 }
+
+func ShrinkChannel(ch chan constants.Message, desiredSize int) {
+	size := len(ch)
+	messagesToDiscard := size - desiredSize
+	for messagesToDiscard > 0 {
+		DiscardChannelMsg(ch)
+		messagesToDiscard--
+	}
+}

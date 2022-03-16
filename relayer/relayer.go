@@ -5,13 +5,15 @@ import (
 	"log"
 	"messagerelayer/constants"
 	"messagerelayer/utils"
+	"sync"
 	"time"
 )
 
-const queueSize = 10
+// QueueSize is the desired retention of messages to keep locally
+var QueueSize = 50
 
 // BroadcastInterval is the amount of wait time to broacast incoming queued messages
-var BroadcastInterval = 5 * time.Second
+var BroadcastInterval = 1 * time.Second
 
 // WorkSummary returns a summary of the work a relayer has completed
 type WorkSummary struct {
@@ -37,12 +39,99 @@ type NetworkSocket interface {
 	Read() (constants.Message, error)
 }
 
+type LinkedMsgList struct {
+	head        *MsgNode
+	tail        *MsgNode
+	size        int
+	desiredSize int
+	mu          sync.Mutex
+}
+
+type MsgNode struct {
+	msg  *constants.Message
+	next *MsgNode
+	prev *MsgNode
+}
+
+func NewLinkedMsgList(desiredSize int) *LinkedMsgList {
+	return &LinkedMsgList{
+		head:        nil,
+		tail:        nil,
+		size:        0,
+		desiredSize: desiredSize,
+		mu:          sync.Mutex{},
+	}
+}
+
+func (lml *LinkedMsgList) Push(msg constants.Message) {
+	lml.mu.Lock()
+	lml.size++
+	// no head set, set and return
+	if lml.head == nil {
+		lml.head = &MsgNode{
+			msg:  &msg,
+			next: nil,
+			prev: nil,
+		}
+		lml.mu.Unlock()
+		return
+	}
+	// replace head with incoming msg node, have it point its next to the current msg node
+	currHead := lml.head
+	newHead := &MsgNode{
+		msg:  &msg,
+		next: currHead,
+		prev: nil,
+	}
+	if lml.tail == nil {
+		lml.tail = currHead
+	}
+	currHead.prev = newHead
+	lml.head = newHead
+	lml.mu.Unlock()
+}
+
+func (lml *LinkedMsgList) Pop() *constants.Message {
+	lml.mu.Lock()
+	if lml.head == nil {
+		lml.mu.Unlock()
+		return nil
+	}
+	curr := lml.head
+	msg := curr.msg
+	lml.head = curr.next // fast forward pointer
+	lml.size--
+	lml.mu.Unlock()
+	return msg
+}
+
+func (lml *LinkedMsgList) Resize() int {
+	lml.mu.Lock()
+	dropped := 0
+	for lml.size >= lml.desiredSize && lml.size > 1 {
+		secondToLast := lml.tail.prev
+		secondToLast.next = nil
+		lml.tail = secondToLast
+		lml.size--
+		dropped++
+	}
+	lml.mu.Unlock()
+	return dropped
+}
+
+func (lml *LinkedMsgList) Size() int {
+	lml.mu.Lock()
+	size := lml.size
+	lml.mu.Unlock()
+	return size
+}
+
 // NewMessageRelayer returns a new message relayer
 func NewMessageRelayer(socket NetworkSocket) Relayer {
 	return &MessageRelayer{
 		socket:               socket,
-		startRoundQueue:      make(chan constants.Message, queueSize),
-		recievedAnswerQueue:  make(chan constants.Message, queueSize),
+		startRoundQueue:      NewLinkedMsgList(QueueSize),
+		recievedAnswerQueue:  NewLinkedMsgList(QueueSize),
 		subscribers:          make(map[constants.MessageType][]chan constants.Message),
 		queuesMsgsCount:      0,
 		broadcastedMsgsCount: 0,
@@ -55,8 +144,8 @@ func NewMessageRelayer(socket NetworkSocket) Relayer {
 // MessageRelayer relays messages from a network socket to its subscribers
 type MessageRelayer struct {
 	socket               NetworkSocket
-	startRoundQueue      chan constants.Message
-	recievedAnswerQueue  chan constants.Message
+	startRoundQueue      *LinkedMsgList
+	recievedAnswerQueue  *LinkedMsgList
 	subscribers          map[constants.MessageType][]chan constants.Message // message type -> array of message channels
 	queuesMsgsCount      int
 	broadcastedMsgsCount int
@@ -66,26 +155,30 @@ type MessageRelayer struct {
 }
 
 func (mr *MessageRelayer) Start(ctx context.Context) {
-	log.Printf("message relayer starting with %v RecievedAnswer subscribers and %v StartNewRound subsribers", len(mr.subscribers[constants.ReceivedAnswer]), len(mr.subscribers[constants.StartNewRound]))
+	// log.Printf("-----message relayer starting with %v RecievedAnswer subscribers and %v StartNewRound subsribers----", len(mr.subscribers[constants.ReceivedAnswer]), len(mr.subscribers[constants.StartNewRound]))
 	for {
-		/*
-		 * start round queue takes precedent over the recieved answer queue
-		 * so we do a nonblocking check for this queue first and then funnel into checking both
-		 * if no messages are queued, we will funnel to bottom most default where we sleep for the Broadcast interval
-		 */
 		select {
-		case msg := <-mr.startRoundQueue:
-			mr.broacast(msg)
-		default:
-		}
-		select {
-		case msg := <-mr.recievedAnswerQueue:
-			mr.broacast(msg)
 		case <-ctx.Done():
 			log.Printf("closing message relayer:: queued: %v messages, broadcasted: %v messages", mr.queuesMsgsCount, mr.broadcastedMsgsCount)
 			mr.done <- true
 			return
 		default:
+			/*
+			 * start round queue takes precedent over the recieved answer queue
+			 * so we do a nonblocking check for this queue first and then funnel into checking both
+			 * if no messages are queued, we will funnel to bottom most default where we sleep for the Broadcast interval
+			 */
+			startNewRoundMsg := mr.startRoundQueue.Pop()
+			if startNewRoundMsg != nil {
+
+				mr.broacast(*startNewRoundMsg)
+			}
+			recievedAnsMsg := mr.recievedAnswerQueue.Pop()
+			if recievedAnsMsg != nil {
+				mr.broacast(*recievedAnsMsg)
+			}
+			mr.skippedMsgCount += mr.recievedAnswerQueue.Resize()
+			mr.startRoundQueue.Resize()
 			time.Sleep(BroadcastInterval)
 		}
 	}
@@ -99,7 +192,7 @@ func (mr *MessageRelayer) broacast(msg constants.Message) {
 	if msg.Type == constants.ReceivedAnswer || msg.Type == constants.All {
 		msgType = constants.ReceivedAnswer
 	}
-	subscriberChannels := mr.subscribers[constants.StartNewRound]
+	subscriberChannels := mr.subscribers[msgType]
 	log.Printf("🔊  broadcasting %v message", msgType.String())
 	for _, subscriberChannel := range subscriberChannels {
 		if utils.ChannelIsFull(subscriberChannel) {
@@ -120,22 +213,12 @@ func (mr MessageRelayer) Read() (constants.Message, error) {
 // Enqueue takes an incoming message and adds it to the message relayer's broadcasting queues
 func (mr *MessageRelayer) Enqueue(msg constants.Message) {
 	if msg.Type == constants.ReceivedAnswer || msg.Type == constants.All {
-		// if our queues are full, we need to discard a message so we can keep most recent messages in queue
-		if utils.ChannelIsFull(mr.recievedAnswerQueue) {
-			utils.DiscardChannelMsg(mr.recievedAnswerQueue)
-			mr.discardedMsgsCount++
-		}
-		mr.recievedAnswerQueue <- msg
+		mr.recievedAnswerQueue.Push(msg)
 		mr.queuesMsgsCount++
 		log.Println("⤴️  added new message to recieved answer queue")
 	}
 	if msg.Type == constants.StartNewRound || msg.Type == constants.All {
-		// if our queues are full, we need to discard a message so we can keep most recent messages in queue
-		if utils.ChannelIsFull(mr.startRoundQueue) {
-			utils.DiscardChannelMsg(mr.startRoundQueue)
-			mr.discardedMsgsCount++
-		}
-		mr.startRoundQueue <- msg
+		mr.startRoundQueue.Push(msg)
 		mr.queuesMsgsCount++
 		log.Println("⤴️  added new message to start round queue")
 	}
