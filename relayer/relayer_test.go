@@ -80,7 +80,7 @@ func TestStartMessageRelayer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go s.Start(ctx)
 	go msgrelayer.Start(ctx)
-	for i := 0; i < 8; i++ {
+	for i := 0; i < len(mockMsgList); i++ {
 		m, err := msgrelayer.Read()
 		assert.Nil(t, err, "read err is nil")
 		msgrelayer.Enqueue(m)
@@ -89,6 +89,6 @@ func TestStartMessageRelayer(t *testing.T) {
 	cancel()
 	<-s.DoneChannel()
 	<-msgrelayer.DoneChannel()
-	assert.Equal(t, 8, msgrelayer.QueuedMsgs(), "queued message count")
-	assert.Equal(t, 8, msgrelayer.BroadcastedMsgs(), "broadcasted message count")
+	assert.Equal(t, len(mockMsgList), msgrelayer.QueuedMsgs(), "queued message count")
+	assert.Equal(t, len(mockMsgList), msgrelayer.BroadcastedMsgs(), "broadcasted message count")
 }
