@@ -3,6 +3,7 @@ package relayer
 import (
 	"context"
 	"log"
+	"math/rand"
 	"messagerelayer/constants"
 	"messagerelayer/utils"
 	"sync"
@@ -128,7 +129,9 @@ func (lml *LinkedMsgList) Size() int {
 
 // NewMessageRelayer returns a new message relayer
 func NewMessageRelayer(socket NetworkSocket) Relayer {
+	rand.Seed(time.Now().UnixNano())
 	return &MessageRelayer{
+		id:                   rand.Intn(1000), // used for looking at logs (not functional)
 		socket:               socket,
 		startRoundQueue:      NewLinkedMsgList(QueueSize),
 		recievedAnswerQueue:  NewLinkedMsgList(QueueSize),
@@ -143,6 +146,7 @@ func NewMessageRelayer(socket NetworkSocket) Relayer {
 
 // MessageRelayer relays messages from a network socket to its subscribers
 type MessageRelayer struct {
+	id                   int
 	socket               NetworkSocket
 	startRoundQueue      *LinkedMsgList
 	recievedAnswerQueue  *LinkedMsgList
@@ -191,7 +195,7 @@ func (mr *MessageRelayer) broacast(msg constants.Message) {
 		msgType = constants.ReceivedAnswer
 	}
 	subscriberChannels := mr.subscribers[msgType]
-	log.Printf("🔊  broadcasting %v message", msgType.String())
+	log.Printf("🔊  broadcasting %v message from relayer %v", msgType.String(), mr.id)
 	for _, subscriberChannel := range subscriberChannels {
 		if utils.ChannelIsFull(subscriberChannel) {
 			mr.skippedMsgCount++

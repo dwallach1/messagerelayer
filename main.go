@@ -15,6 +15,7 @@ import (
 )
 
 const READ_INTERVAL_SECS = 5
+const RELAYER_MULTIPLICITY = 5
 
 type MockNetworkSocket struct {
 	Messages                 []constants.Message
@@ -61,9 +62,13 @@ func main() {
 	 * Service configuration and setup
 	 */
 	rootCtx, cancel := context.WithCancel(context.Background())
-	msgRelayer := relayer.NewMessageRelayer(MockNetworkSocket{})
+	relayers := []relayer.Relayer{}
+	for i := 0; i < RELAYER_MULTIPLICITY; i++ {
+		relayers = append(relayers, relayer.NewMessageRelayer(MockNetworkSocket{}))
+	}
+
 	msgPoller := poller.New(READ_INTERVAL_SECS * time.Second)
-	go handleSigInt(cancel, msgRelayer, msgPoller)
+	go handleSigInt(cancel, relayers, msgPoller)
 	/*
 	 * Add subscribers
 	 */
@@ -71,11 +76,15 @@ func main() {
 		subscriberType := s.Type()
 		if subscriberType == constants.StartNewRound || subscriberType == constants.All {
 			subscriberChan := s.Channel(constants.StartNewRound)
-			msgRelayer.SubscribeToMessages(constants.StartNewRound, subscriberChan)
+			for _, msgRelayer := range relayers {
+				msgRelayer.SubscribeToMessages(constants.StartNewRound, subscriberChan)
+			}
 		}
 		if subscriberType == constants.ReceivedAnswer || subscriberType == constants.All {
 			subscriberChan := s.Channel(constants.ReceivedAnswer)
-			msgRelayer.SubscribeToMessages(constants.ReceivedAnswer, subscriberChan)
+			for _, msgRelayer := range relayers {
+				msgRelayer.SubscribeToMessages(constants.ReceivedAnswer, subscriberChan)
+			}
 		}
 		go s.Start(rootCtx)
 	}
@@ -83,12 +92,14 @@ func main() {
 	 * Start service
 	 */
 	log.Println("starting message relayer & poller...")
-	go msgRelayer.Start(rootCtx)
-	go msgPoller.Start(rootCtx, msgRelayer)
+	for _, msgRelayer := range relayers {
+		go msgRelayer.Start(rootCtx)
+	}
+	go msgPoller.Start(rootCtx, relayers)
 	select {} // block until sigint detected
 }
 
-func handleSigInt(cancel context.CancelFunc, msgRelayer relayer.Relayer, msgPoller poller.Poller) {
+func handleSigInt(cancel context.CancelFunc, msgRelayers []relayer.Relayer, msgPoller poller.Poller) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
@@ -100,10 +111,12 @@ func handleSigInt(cancel context.CancelFunc, msgRelayer relayer.Relayer, msgPoll
 		close(s.DoneChannel())
 		log.Printf("subscriber %v is now closed", s.Name())
 	}
-	// wait for message relayer to close gracefully
-	<-msgRelayer.DoneChannel()
-	log.Printf("message relayer is now closed")
-	close(msgRelayer.DoneChannel())
+	for i, msgRelayer := range msgRelayers {
+		// wait for message relayer to close gracefully
+		<-msgRelayer.DoneChannel()
+		log.Printf("message relayer %v is now closed", i)
+		close(msgRelayer.DoneChannel())
+	}
 	// wait for poller to close gracefully
 	<-msgPoller.DoneChannel()
 	log.Printf("poller is now closed")

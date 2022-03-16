@@ -9,7 +9,7 @@ import (
 
 // Poller describes something that polls for new messages and sends them to a message relayer
 type Poller interface {
-	Start(context.Context, relayer.Relayer)
+	Start(context.Context, []relayer.Relayer)
 	DoneChannel() chan bool
 }
 
@@ -28,12 +28,23 @@ func New(readInterval time.Duration) Poller {
 }
 
 // Start invokes a message poller to start polling
-func (mp MessagePoller) Start(ctx context.Context, msgRelayer relayer.Relayer) {
+func (mp MessagePoller) Start(ctx context.Context, msgRelayers []relayer.Relayer) {
 	ticker := time.NewTicker(mp.readInterval)
+	i := 0
+	relayerCount := len(msgRelayers)
 	for {
 		select {
 		case <-ticker.C:
 			log.Println("reading new message...")
+			// get relayer round robin style
+			// idx := i
+			// if i > relayerCount {
+			// 	idx = idx % relayerCount
+			// }
+			// log.Printf("idx is %v", idx)
+			idx := i % relayerCount
+			log.Printf("idx is %v", idx)
+			msgRelayer := msgRelayers[idx]
 			msg, err := msgRelayer.Read()
 			if err != nil {
 				log.Printf("unable to process message: %v", err)
@@ -41,6 +52,7 @@ func (mp MessagePoller) Start(ctx context.Context, msgRelayer relayer.Relayer) {
 			}
 			log.Printf("got new message of type %v: %v", msg.Type, string(msg.Data))
 			msgRelayer.Enqueue(msg)
+			i++
 		case <-ctx.Done():
 			log.Println("closing poller")
 			ticker.Stop()
