@@ -7,3 +7,8 @@ const (
 	ReceivedAnswer
 	All
 )
+
+type Message struct {
+	Type MessageType
+	Data []byte
+}

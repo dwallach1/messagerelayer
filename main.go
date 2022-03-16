@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"messagerelayer/constants"
@@ -15,16 +16,16 @@ import (
 const READ_INTERVAL_SECS = 5
 
 type MockNetworkSocket struct {
-	Messages                 []relayer.Message
+	Messages                 []constants.Message
 	DelaySecsBetweenMessages func(int) time.Duration // take in the number of messages and return a delay
 	ProcessedMsgs            *int
 }
 
 var i = 0
 
-func (mns MockNetworkSocket) Read() (relayer.Message, error) {
+func (mns MockNetworkSocket) Read() (constants.Message, error) {
 	i++
-	return relayer.Message{
+	return constants.Message{
 		Type: constants.StartNewRound,
 		Data: []byte(fmt.Sprintf("mock message %v", i)),
 	}, nil
@@ -34,25 +35,30 @@ func main() {
 	/*
 	 * Service configuration and setup
 	 */
+	rootCtx, cancel := context.WithCancel(context.Background())
 	msgRelayer := relayer.NewMessageRelayer(MockNetworkSocket{})
 	stopPollingChan := make(chan bool)
-	go handleSigInt(stopPollingChan)
-	log.Printf("starting message relayer with read interval set to %v seconds...", READ_INTERVAL_SECS)
+	go handleSigInt(stopPollingChan, cancel)
+	log.Printf("starting service with read interval set to %v seconds...", READ_INTERVAL_SECS)
 
 	/*
 	 * Setup mock subscribers
 	 */
 	subscribers := []subscriber.Subscriber{
-		subscriber.New(constants.StartNewRound, func() time.Duration { return time.Second * 1 }, 5, "joe"),
-		subscriber.New(constants.StartNewRound, func() time.Duration { return time.Second * 1 }, 5, "bob"),
-		subscriber.New(constants.All, func() time.Duration { return time.Second * 1 }, 5, "sally"),
+		subscriber.New(constants.ReceivedAnswer, func() time.Duration { return time.Second * 3 }, 5, "joe"),
+		subscriber.New(constants.StartNewRound, func() time.Duration { return time.Second * 3 }, 5, "bob"),
+		subscriber.New(constants.All, func() time.Duration { return time.Second * 3 }, 5, "sally"),
 	}
 	for _, s := range subscribers {
-		msgRelayer.SubscribeToMessages(s.Type(), s.Channel(s.Type()))
-		go s.Start()
+		subscriberType := s.Type()
+		subscriberChan := s.Channel(subscriberType)
+		log.Printf("subsribing with queue size of %v", len(subscriberChan))
+		msgRelayer.SubscribeToMessages(subscriberType, subscriberChan)
+		go s.Start(rootCtx)
 	}
 
-	go msgRelayer.Start()
+	log.Println("starting message relayer...")
+	go msgRelayer.Start(rootCtx)
 
 	/*
 	 * Poller logic to process incoming messages
@@ -76,15 +82,15 @@ func main() {
 	}
 }
 
-func handleSigInt(stopPollingChan chan bool) {
+func handleSigInt(stopPollingChan chan bool, cancel context.CancelFunc) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
 	log.Println("detected signal interrupt, cleaning up and exiting..")
 	stopPollingChan <- true
+	cancel()
 	time.Sleep(1 * time.Second)
 	// @todo do we need to do this
-	close(stopPollingChan)
 	log.Println("exiting gracefully")
 	os.Exit(0)
 }
