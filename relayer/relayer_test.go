@@ -2,6 +2,7 @@ package relayer_test
 
 import (
 	"context"
+	"fmt"
 	"messagerelayer/constants"
 	"messagerelayer/relayer"
 	"messagerelayer/subscriber"
@@ -80,7 +81,7 @@ func TestStartMessageRelayer(t *testing.T) {
 	})
 	msgrelayer.SubscribeToMessages(constants.StartNewRound, s.Channel(constants.StartNewRound))
 	msgrelayer.SubscribeToMessages(constants.ReceivedAnswer, s.Channel(constants.ReceivedAnswer))
-
+	relayer.BroadcastInterval = 0 * time.Second
 	ctx, cancel := context.WithCancel(context.Background())
 	go s.Start(ctx)
 	go msgrelayer.Start(ctx)
@@ -127,7 +128,7 @@ func TestStartMessageRelayerWithBusySubscriber(t *testing.T) {
 	assert.Equal(t, len(mockMsgList)-2, summary.SkippedMsgs, "skipped message count")
 }
 
-func TestMessagePrecedence(t *testing.T) {
+func TestMessagePriroty(t *testing.T) {
 	s := subscriber.NewNoop(2)
 	msgrelayer := relayer.NewMessageRelayer(&MockNetworkSocket{
 		ReadCallCount: 0,
@@ -164,4 +165,57 @@ func TestMessagePrecedence(t *testing.T) {
 	cancel()
 	<-s.DoneChannel()
 	<-msgrelayer.DoneChannel()
+}
+
+func TestMostRecentMessagesBroadcastedFirst(t *testing.T) {
+	s := subscriber.NewNoop(10)
+	msgrelayer := relayer.NewMessageRelayer(&MockNetworkSocket{
+		ReadCallCount: 0,
+		DefaultMessage: constants.Message{
+			Type: constants.ReceivedAnswer,
+			Data: []byte("mock"),
+		},
+	})
+	relayer.BroadcastInterval = 0 * time.Second
+	msgrelayer.SubscribeToMessages(constants.ReceivedAnswer, s.Channel(constants.ReceivedAnswer))
+	ctx, cancel := context.WithCancel(context.Background())
+	go s.Start(ctx)
+	msgrelayer.Enqueue(constants.Message{Type: constants.ReceivedAnswer, Data: []byte("recievedAns1")})
+	msgrelayer.Enqueue(constants.Message{Type: constants.ReceivedAnswer, Data: []byte("recievedAns2")})
+	msgrelayer.Enqueue(constants.Message{Type: constants.ReceivedAnswer, Data: []byte("recievedAns3")})
+	msgrelayer.Enqueue(constants.Message{Type: constants.ReceivedAnswer, Data: []byte("recievedAns4")})
+	msgrelayer.Enqueue(constants.Message{Type: constants.ReceivedAnswer, Data: []byte("recievedAns5")})
+
+	go msgrelayer.Start(ctx)
+
+	resultChan := make(chan constants.Message)
+	// read only a single message off the queues
+	go func(result chan constants.Message, recievedAnsChan chan constants.Message) {
+		msg := <-recievedAnsChan
+		result <- msg
+	}(resultChan, s.Channel(constants.ReceivedAnswer))
+	msg := <-resultChan
+	assert.Equal(t, "recievedAns5", string(msg.Data), "we should read most recent")
+	cancel()
+	<-s.DoneChannel()
+	<-msgrelayer.DoneChannel()
+}
+
+func TestLinkedListResizing(t *testing.T) {
+	list := relayer.NewLinkedMsgList(5)
+
+	for i := 0; i < 10; i++ {
+		list.Push(constants.Message{Data: []byte(fmt.Sprintf("msg_%v", i))})
+	}
+	assert.Equal(t, 10, list.Size(), "list should have all messages")
+	list.Resize()
+	assert.Equal(t, 4, list.Size(), "list should have all messages")
+	// now ensure that we have the latest ones
+	assert.Equal(t, string(list.Pop().Data), "msg_9")
+	assert.Equal(t, string(list.Pop().Data), "msg_8")
+	assert.Equal(t, string(list.Pop().Data), "msg_7")
+	assert.Equal(t, string(list.Pop().Data), "msg_6")
+	// once we pop all of them, verify we get null
+	assert.Nil(t, list.Pop())
+	assert.Equal(t, 0, list.Size(), "list should now be empty")
 }

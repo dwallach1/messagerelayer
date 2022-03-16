@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestStartMessageRelayer(t *testing.T) {
+func TestStartPoller(t *testing.T) {
 	msgrelayer := relayer.NewMessageRelayer(&MockNetworkSocket{})
 	msgpoller := poller.New(1 * time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
