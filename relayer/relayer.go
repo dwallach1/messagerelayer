@@ -155,7 +155,6 @@ type MessageRelayer struct {
 }
 
 func (mr *MessageRelayer) Start(ctx context.Context) {
-	// log.Printf("-----message relayer starting with %v RecievedAnswer subscribers and %v StartNewRound subsribers----", len(mr.subscribers[constants.ReceivedAnswer]), len(mr.subscribers[constants.StartNewRound]))
 	for {
 		select {
 		case <-ctx.Done():
@@ -165,7 +164,6 @@ func (mr *MessageRelayer) Start(ctx context.Context) {
 		default:
 			/*
 			 * start round queue takes precedent over the recieved answer queue
-			 * so we do a nonblocking check for this queue first and then funnel into checking both
 			 * if no messages are queued, we will funnel to bottom most default where we sleep for the Broadcast interval
 			 */
 			startNewRoundMsg := mr.startRoundQueue.Pop()
