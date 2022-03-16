@@ -36,13 +36,13 @@ type MessageRelayer struct {
 }
 
 func (mr *MessageRelayer) Start(ctx context.Context) {
-	log.Printf("message relayer starting with %v RecievedAnswer subscribers and %v StartNewRound subsribers\v", len(mr.subscribers[constants.ReceivedAnswer]), len(mr.subscribers[constants.StartNewRound]))
+	log.Printf("message relayer starting with %v RecievedAnswer subscribers and %v StartNewRound subsribers", len(mr.subscribers[constants.ReceivedAnswer]), len(mr.subscribers[constants.StartNewRound]))
 	for {
 		select {
 		case msg := <-mr.recievedAnswerQueue:
 			subscriberChannels := mr.subscribers[constants.ReceivedAnswer]
 			for _, subscriberChannel := range subscriberChannels {
-				log.Println("--> adding new message to subscriber channel for recieved answer message")
+				// log.Println("--> adding new message to subscriber channel for recieved answer message")
 				if channelIsFull(subscriberChannel) {
 					log.Printf("discarding message of full ReceivedAnswer channel")
 					discardChannelMsg(subscriberChannel)
@@ -52,7 +52,7 @@ func (mr *MessageRelayer) Start(ctx context.Context) {
 		case msg := <-mr.startRoundQueue:
 			subscriberChannels := mr.subscribers[constants.StartNewRound]
 			for _, subscriberChannel := range subscriberChannels {
-				log.Println("--> adding new message to subscriber channel for start new round message")
+				// log.Println("--> adding new message to subscriber channel for start new round message")
 				if channelIsFull(subscriberChannel) {
 					log.Printf("discarding message of full StartNewRound channel")
 					discardChannelMsg(subscriberChannel)
@@ -60,7 +60,7 @@ func (mr *MessageRelayer) Start(ctx context.Context) {
 				subscriberChannel <- msg
 			}
 		case <-ctx.Done():
-			log.Printf("context cancelled detected: closing message relayer")
+			log.Printf("closed message relayer")
 			return
 		}
 	}

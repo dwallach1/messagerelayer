@@ -7,17 +7,19 @@ import (
 	"time"
 )
 
+// Subscriber reads messages sent from a message relayer
 type Subscriber interface {
+	Start(context.Context)
+	Channel(constants.MessageType) chan constants.Message
+	DoneChannel() chan bool
+	Type() constants.MessageType
+	// helper methods for testing
 	Name() string
 	ProcessedCount() int
 	WaitTime() time.Duration
-	DoneChannel() chan bool
-	Type() constants.MessageType
-	Status() string
-	Channel(constants.MessageType) chan constants.Message
-	Start(context.Context)
 }
 
+// MockSubscriber is a noop subscriber that just reads and prints the incoming messages
 type MockSubscriber struct {
 	name           string
 	msgType        constants.MessageType
@@ -27,8 +29,10 @@ type MockSubscriber struct {
 	done           chan bool
 }
 
+// QueueMap stores the associated channels for each message type for a subscriber
 type QueueMap map[constants.MessageType]chan constants.Message
 
+// Get retrieves the associated queue map for the parent subscriber
 func (q QueueMap) Get(msgType constants.MessageType) chan constants.Message {
 	c, ok := q[msgType]
 	if !ok {
@@ -37,6 +41,7 @@ func (q QueueMap) Get(msgType constants.MessageType) chan constants.Message {
 	return c
 }
 
+// New returns a new subscriber
 func New(msgType constants.MessageType, waitTime func() time.Duration, queueSize int, name string) Subscriber {
 	queues := QueueMap{}
 	if msgType == constants.ReceivedAnswer || msgType == constants.All {
@@ -75,17 +80,14 @@ func (ms MockSubscriber) Type() constants.MessageType {
 	return ms.msgType
 }
 
-func (ms MockSubscriber) Status() string {
-	return "active"
-}
-
+// Cahnnel returns the subscribers associated channel
 func (ms MockSubscriber) Channel(msgType constants.MessageType) chan constants.Message {
-	log.Printf("getChannel for %v has cap of %v", ms.name, len(ms.msgQueues.Get(msgType)))
 	return ms.msgQueues.Get(msgType)
 }
 
+// Start begins the subscriber to listen for new messages from the message relayer
 func (ms *MockSubscriber) Start(ctx context.Context) {
-	log.Printf("subscriber %v starting: %+v\n", ms.name, ms.msgQueues)
+	log.Printf("subscriber %v starting", ms.name)
 	for {
 		select {
 		case msg := <-ms.msgQueues.Get(constants.StartNewRound):
@@ -95,9 +97,11 @@ func (ms *MockSubscriber) Start(ctx context.Context) {
 			log.Printf("<<>> %v reading new recieved answer message: %+v", ms.name, string(msg.Data))
 			ms.processedCount++
 		case <-ctx.Done():
-			log.Printf("context cancelled detected: closing subscriber %v who processed %v messages", ms.name, ms.processedCount)
+			log.Printf("closed subscriber %v who processed %v messages", ms.name, ms.processedCount)
 			ms.done <- true
 			return
+		default:
+			time.Sleep(ms.waitTime())
 		}
 	}
 }

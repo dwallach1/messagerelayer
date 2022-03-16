@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
 	"messagerelayer/constants"
 	"messagerelayer/relayer"
 	"messagerelayer/subscriber"
@@ -26,9 +25,8 @@ var i = 0
 
 func (mns MockNetworkSocket) Read() (constants.Message, error) {
 	i++
-	rand.Seed(time.Now().UnixNano())
 	return constants.Message{
-		Type: []constants.MessageType{constants.StartNewRound, constants.ReceivedAnswer}[rand.Intn(1)],
+		Type: []constants.MessageType{constants.StartNewRound, constants.ReceivedAnswer}[i%2],
 		Data: []byte(fmt.Sprintf("mock message %v", i)),
 	}, nil
 }
@@ -81,10 +79,11 @@ func main() {
 
 	log.Println("starting message relayer...")
 	go msgRelayer.Start(rootCtx)
+	go pollMsgs(rootCtx, msgRelayer, stopPollingChan)
+	select {}
+}
 
-	/*
-	 * Poller logic to process incoming messages
-	 */
+func pollMsgs(ctx context.Context, msgRelayer relayer.Relayer, stop chan bool) {
 	ticker := time.NewTicker(READ_INTERVAL_SECS * time.Second)
 	for {
 		select {
@@ -97,9 +96,14 @@ func main() {
 			}
 			log.Printf("got new message of type %v: %v\n", msg.Type, string(msg.Data))
 			msgRelayer.Enqueue(msg)
-		case <-stopPollingChan:
+		case <-stop:
 			ticker.Stop()
-			log.Println("stopped poller...")
+			log.Println("closed poller...")
+			return
+		case <-ctx.Done():
+			ticker.Stop()
+			log.Println("closed poller...")
+			return
 		}
 	}
 }
