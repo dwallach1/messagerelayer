@@ -21,7 +21,7 @@ the "StartNewRound" message queue to ensure it takes priority for each `relayer.
 ## Improvements
 To handle addtional load, we could introduce multiplicity across relayers and pollers. We could achieve this in different ways:
 1. give the poller a pool of relayers where each relayer has the same copy of the list of subscribers. The poller then adds the incoming 
-message to a round-robin selected relayer
+message to a round-robin selected relayer - i showed an example of this using the branch `multiplicity`
 2. use a "manager" concept that holds the queues that multiple relayers can read from and each relayer pops a message when it becomes available to do so
 
 ## Objective
