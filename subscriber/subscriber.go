@@ -60,27 +60,32 @@ func New(msgType constants.MessageType, waitTime func() time.Duration, queueSize
 	}
 }
 
+// Name returns the subscribers name
 func (ms MockSubscriber) Name() string {
 	return ms.name
 }
 
+// ProcessedCount returns the number of messages a subscriber processed
 func (ms MockSubscriber) ProcessedCount() int {
 	return ms.processedCount
 }
 
+// WaitTime returns the duration for the subscriber to wait inbetween reading messages that have been broadcasted to it
 func (ms MockSubscriber) WaitTime() time.Duration {
 	return ms.waitTime()
 }
 
+// DoneChannel returns the subscribers done channel so the parent process can wait until it completes to exit
 func (ms MockSubscriber) DoneChannel() chan bool {
 	return ms.done
 }
 
+// Type returns the message type the subscriber was registered with
 func (ms MockSubscriber) Type() constants.MessageType {
 	return ms.msgType
 }
 
-// Cahnnel returns the subscribers associated channel
+// Channel returns the subscribers associated channel
 func (ms MockSubscriber) Channel(msgType constants.MessageType) chan constants.Message {
 	return ms.msgQueues.Get(msgType)
 }
@@ -106,11 +111,13 @@ func (ms *MockSubscriber) Start(ctx context.Context) {
 	}
 }
 
+// NoopSubscriber doesn't read any messages from its queues
 type NoopSubscriber struct {
 	done      chan bool
 	msgQueues QueueMap
 }
 
+// NewNoop returns a new instance a NoopSubsciber
 func NewNoop(queueSize int) Subscriber {
 	queues := QueueMap{}
 	queues[constants.ReceivedAnswer] = make(chan constants.Message, queueSize)
@@ -127,27 +134,32 @@ func (ns *NoopSubscriber) Start(ctx context.Context) {
 	ns.done <- true
 }
 
+// Name returns the subscribers name
 func (ns NoopSubscriber) Name() string {
 	return "noop subscriber"
 }
 
+// ProcessedCount returns the number of messages a subscriber processed
 func (ns NoopSubscriber) ProcessedCount() int {
 	return 0
 }
 
+// WaitTime returns the duration for the subscriber to wait inbetween reading messages that have been broadcasted to it
 func (ns NoopSubscriber) WaitTime() time.Duration {
 	return 0 * time.Second
 }
 
+// DoneChannel returns the subscribers done channel so the parent process can wait until it completes to exit
 func (ns NoopSubscriber) DoneChannel() chan bool {
 	return ns.done
 }
 
+// Type returns the message type the subscriber was registered with
 func (ns NoopSubscriber) Type() constants.MessageType {
 	return constants.All
 }
 
-// Cahnnel returns the subscribers associated channel
+// Channel returns the subscribers associated channel
 func (ns NoopSubscriber) Channel(msgType constants.MessageType) chan constants.Message {
 	return ns.msgQueues.Get(msgType)
 }

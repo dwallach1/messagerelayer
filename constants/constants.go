@@ -8,6 +8,16 @@ const (
 	All
 )
 
+func (mt MessageType) String() string {
+	if mt == StartNewRound {
+		return "start new round"
+	}
+	if mt == ReceivedAnswer {
+		return "recieved answer"
+	}
+	return "all"
+}
+
 type Message struct {
 	Type MessageType
 	Data []byte

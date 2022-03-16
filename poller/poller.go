@@ -7,16 +7,19 @@ import (
 	"time"
 )
 
+// Poller describes something that polls for new messages and sends them to a message relayer
 type Poller interface {
 	Start(context.Context, relayer.Relayer)
 	DoneChannel() chan bool
 }
 
+// MessagePoller is a poller that enqueues messages to a message relayer
 type MessagePoller struct {
 	done         chan bool
 	readInterval time.Duration
 }
 
+// New returns an instance of a MessagePoller
 func New(readInterval time.Duration) Poller {
 	return MessagePoller{
 		readInterval: readInterval,
@@ -24,6 +27,7 @@ func New(readInterval time.Duration) Poller {
 	}
 }
 
+// Start invokes a message poller to start polling
 func (mp MessagePoller) Start(ctx context.Context, msgRelayer relayer.Relayer) {
 	ticker := time.NewTicker(mp.readInterval)
 	for {
@@ -46,6 +50,7 @@ func (mp MessagePoller) Start(ctx context.Context, msgRelayer relayer.Relayer) {
 	}
 }
 
+// DoneChannel returns the subscribers done channel so the parent process can wait until it completes to exit
 func (mp MessagePoller) DoneChannel() chan bool {
 	return mp.done
 }

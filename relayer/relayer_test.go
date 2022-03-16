@@ -107,7 +107,7 @@ func TestStartMessageRelayerWithBusySubscriber(t *testing.T) {
 			Data: []byte("mock"),
 		},
 	})
-	relayer.ReadInterval = 0 * time.Second
+	relayer.BroadcastInterval = 0 * time.Second
 	msgrelayer.SubscribeToMessages(constants.StartNewRound, s.Channel(constants.StartNewRound))
 	ctx, cancel := context.WithCancel(context.Background())
 	go s.Start(ctx)
@@ -125,4 +125,43 @@ func TestStartMessageRelayerWithBusySubscriber(t *testing.T) {
 	assert.Equal(t, len(mockMsgList), summary.QueuedMsgs, "queued message count")
 	assert.Equal(t, 2, summary.BroadcastedMsgs, "broadcasted message count should be less since subscriber fills up after 2")
 	assert.Equal(t, len(mockMsgList)-2, summary.SkippedMsgs, "skipped message count")
+}
+
+func TestMessagePrecedence(t *testing.T) {
+	s := subscriber.NewNoop(2)
+	msgrelayer := relayer.NewMessageRelayer(&MockNetworkSocket{
+		ReadCallCount: 0,
+		DefaultMessage: constants.Message{
+			Type: constants.StartNewRound,
+			Data: []byte("mock"),
+		},
+	})
+	relayer.BroadcastInterval = 5 * time.Second // allow both messages to get queued
+	msgrelayer.SubscribeToMessages(constants.StartNewRound, s.Channel(constants.StartNewRound))
+	msgrelayer.SubscribeToMessages(constants.ReceivedAnswer, s.Channel(constants.ReceivedAnswer))
+	ctx, cancel := context.WithCancel(context.Background())
+	go s.Start(ctx)
+	go msgrelayer.Start(ctx)
+	/*
+	 * enqueue both message types
+	 */
+	msgrelayer.Enqueue(constants.Message{Type: constants.ReceivedAnswer, Data: []byte("recievedAns")})
+	msgrelayer.Enqueue(constants.Message{Type: constants.StartNewRound, Data: []byte("startNewRound")})
+	resultChan := make(chan constants.Message)
+	// read only a single message off the queues
+	go func(result chan constants.Message, startNewRoundChan chan constants.Message, recievedAnsChan chan constants.Message) {
+		select {
+		case msg := <-recievedAnsChan:
+			result <- msg
+			return
+		case msg := <-startNewRoundChan:
+			result <- msg
+			return
+		}
+	}(resultChan, s.Channel(constants.StartNewRound), s.Channel(constants.ReceivedAnswer))
+	msg := <-resultChan
+	assert.Equal(t, "startNewRound", string(msg.Data)) // ensure the message we read is a startNewRound message as this has higher priority
+	cancel()
+	<-s.DoneChannel()
+	<-msgrelayer.DoneChannel()
 }
