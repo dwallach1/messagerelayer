@@ -65,6 +65,9 @@ func main() {
 	msgPoller := poller.New(READ_INTERVAL_SECS * time.Second)
 	go handleSigInt(cancel, msgRelayer, msgPoller)
 	log.Printf("starting service with read interval set to %v seconds...", READ_INTERVAL_SECS)
+	/*
+	 * Add subscribers
+	 */
 	for _, s := range subscribers {
 		subscriberType := s.Type()
 		if subscriberType == constants.StartNewRound || subscriberType == constants.All {
@@ -77,11 +80,13 @@ func main() {
 		}
 		go s.Start(rootCtx)
 	}
-
+	/*
+	 * Start service
+	 */
 	log.Println("starting message relayer...")
 	go msgRelayer.Start(rootCtx)
 	go msgPoller.Start(rootCtx, msgRelayer)
-	select {}
+	select {} // block until sigint detected
 }
 
 func handleSigInt(cancel context.CancelFunc, msgRelayer relayer.Relayer, msgPoller poller.Poller) {
