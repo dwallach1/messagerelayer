@@ -2,7 +2,6 @@ package relayer
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"messagerelayer/constants"
 )
@@ -42,16 +41,22 @@ func (mr *MessageRelayer) Start(ctx context.Context) {
 		select {
 		case msg := <-mr.recievedAnswerQueue:
 			subscriberChannels := mr.subscribers[constants.ReceivedAnswer]
-			// log.Printf("funneling recieved answer message to %v subsribers\n", len(subscriberChannels))
 			for _, subscriberChannel := range subscriberChannels {
-				fmt.Println("--> adding new message to subsriber channel for recieved answer message")
+				log.Println("--> adding new message to subscriber channel for recieved answer message")
+				if channelIsFull(subscriberChannel) {
+					log.Printf("discarding message of full ReceivedAnswer channel")
+					discardChannelMsg(subscriberChannel)
+				}
 				subscriberChannel <- msg
 			}
 		case msg := <-mr.startRoundQueue:
 			subscriberChannels := mr.subscribers[constants.StartNewRound]
-			// log.Printf("funneling start new round message to %v subsribers\n", len(subscriberChannels))
 			for _, subscriberChannel := range subscriberChannels {
-				fmt.Println("--> adding new message to subsriber channel for start new round message")
+				log.Println("--> adding new message to subscriber channel for start new round message")
+				if channelIsFull(subscriberChannel) {
+					log.Printf("discarding message of full StartNewRound channel")
+					discardChannelMsg(subscriberChannel)
+				}
 				subscriberChannel <- msg
 			}
 		case <-ctx.Done():
@@ -77,5 +82,19 @@ func (mr *MessageRelayer) Enqueue(msg constants.Message) {
 }
 
 func (mr *MessageRelayer) SubscribeToMessages(msgType constants.MessageType, ch chan constants.Message) {
+	if msgType == constants.All {
+		mr.subscribers[constants.ReceivedAnswer] = append(mr.subscribers[constants.ReceivedAnswer], ch)
+		mr.subscribers[constants.StartNewRound] = append(mr.subscribers[constants.StartNewRound], ch)
+		return
+	}
 	mr.subscribers[msgType] = append(mr.subscribers[msgType], ch)
+}
+
+func channelIsFull(ch chan constants.Message) bool {
+	// log.Printf("len=%v, cap=%v", len(ch), cap(ch))
+	return len(ch) == cap(ch)
+}
+
+func discardChannelMsg(ch chan constants.Message) {
+	<-ch
 }

@@ -8,6 +8,10 @@ import (
 )
 
 type Subscriber interface {
+	Name() string
+	ProcessedCount() int
+	WaitTime() time.Duration
+	DoneChannel() chan bool
 	Type() constants.MessageType
 	Status() string
 	Channel(constants.MessageType) chan constants.Message
@@ -20,6 +24,7 @@ type MockSubscriber struct {
 	processedCount int
 	waitTime       func() time.Duration
 	msgQueues      QueueMap
+	done           chan bool
 }
 
 type QueueMap map[constants.MessageType]chan constants.Message
@@ -45,7 +50,25 @@ func New(msgType constants.MessageType, waitTime func() time.Duration, queueSize
 		processedCount: 0,
 		waitTime:       waitTime,
 		msgQueues:      queues,
+		msgType:        msgType,
+		done:           make(chan bool),
 	}
+}
+
+func (ms MockSubscriber) Name() string {
+	return ms.name
+}
+
+func (ms MockSubscriber) ProcessedCount() int {
+	return ms.processedCount
+}
+
+func (ms MockSubscriber) WaitTime() time.Duration {
+	return ms.waitTime()
+}
+
+func (ms MockSubscriber) DoneChannel() chan bool {
+	return ms.done
 }
 
 func (ms MockSubscriber) Type() constants.MessageType {
@@ -57,23 +80,24 @@ func (ms MockSubscriber) Status() string {
 }
 
 func (ms MockSubscriber) Channel(msgType constants.MessageType) chan constants.Message {
+	log.Printf("getChannel for %v has cap of %v", ms.name, len(ms.msgQueues.Get(msgType)))
 	return ms.msgQueues.Get(msgType)
 }
 
-func (ms MockSubscriber) Start(ctx context.Context) {
+func (ms *MockSubscriber) Start(ctx context.Context) {
 	log.Printf("subscriber %v starting: %+v\n", ms.name, ms.msgQueues)
 	for {
 		select {
 		case msg := <-ms.msgQueues.Get(constants.StartNewRound):
-			log.Printf("%v reading new start round message: %+v", ms.name, string(msg.Data))
+			log.Printf("<<>> %v reading new start round message: %+v", ms.name, string(msg.Data))
+			ms.processedCount++
 		case msg := <-ms.msgQueues.Get(constants.ReceivedAnswer):
-			log.Printf("%v reading new recieved answer message: %+v", ms.name, string(msg.Data))
+			log.Printf("<<>> %v reading new recieved answer message: %+v", ms.name, string(msg.Data))
+			ms.processedCount++
 		case <-ctx.Done():
-			log.Printf("context cancelled detected: closing subscriber %v", ms.name)
+			log.Printf("context cancelled detected: closing subscriber %v who processed %v messages", ms.name, ms.processedCount)
+			ms.done <- true
 			return
-			// default:
-			// 	log.Printf("no msgs for %v", ms.name)
-			// 	time.Sleep(ms.waitTime())
 		}
 	}
 }

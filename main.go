@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"messagerelayer/constants"
 	"messagerelayer/relayer"
 	"messagerelayer/subscriber"
@@ -25,8 +26,9 @@ var i = 0
 
 func (mns MockNetworkSocket) Read() (constants.Message, error) {
 	i++
+	rand.Seed(time.Now().UnixNano())
 	return constants.Message{
-		Type: constants.StartNewRound,
+		Type: []constants.MessageType{constants.StartNewRound, constants.ReceivedAnswer}[rand.Intn(1)],
 		Data: []byte(fmt.Sprintf("mock message %v", i)),
 	}, nil
 }
@@ -45,15 +47,35 @@ func main() {
 	 * Setup mock subscribers
 	 */
 	subscribers := []subscriber.Subscriber{
-		subscriber.New(constants.ReceivedAnswer, func() time.Duration { return time.Second * 3 }, 5, "joe"),
-		subscriber.New(constants.StartNewRound, func() time.Duration { return time.Second * 3 }, 5, "bob"),
-		subscriber.New(constants.All, func() time.Duration { return time.Second * 3 }, 5, "sally"),
+		subscriber.New(
+			constants.ReceivedAnswer,
+			func() time.Duration { return time.Second * 3 },
+			5,
+			"joe",
+		),
+		subscriber.New(
+			constants.StartNewRound,
+			func() time.Duration { return time.Second * 3 },
+			5,
+			"bob",
+		),
+		subscriber.New(
+			constants.All,
+			func() time.Duration { return time.Second * 3 },
+			5,
+			"sally",
+		),
 	}
 	for _, s := range subscribers {
 		subscriberType := s.Type()
-		subscriberChan := s.Channel(subscriberType)
-		log.Printf("subsribing with queue size of %v", len(subscriberChan))
-		msgRelayer.SubscribeToMessages(subscriberType, subscriberChan)
+		if subscriberType == constants.StartNewRound || subscriberType == constants.All {
+			subscriberChan := s.Channel(constants.StartNewRound)
+			msgRelayer.SubscribeToMessages(constants.StartNewRound, subscriberChan)
+		}
+		if subscriberType == constants.ReceivedAnswer || subscriberType == constants.All {
+			subscriberChan := s.Channel(constants.ReceivedAnswer)
+			msgRelayer.SubscribeToMessages(constants.ReceivedAnswer, subscriberChan)
+		}
 		go s.Start(rootCtx)
 	}
 
@@ -89,7 +111,7 @@ func handleSigInt(stopPollingChan chan bool, cancel context.CancelFunc) {
 	log.Println("detected signal interrupt, cleaning up and exiting..")
 	stopPollingChan <- true
 	cancel()
-	time.Sleep(1 * time.Second)
+	time.Sleep(5 * time.Second) // let things shut down gracefully
 	// @todo do we need to do this
 	log.Println("exiting gracefully")
 	os.Exit(0)

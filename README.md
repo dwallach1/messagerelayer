@@ -5,10 +5,11 @@
 Build a system that broadcasts messages from a network endpoint to other systems in the codebase.
 There are two types of messages, “StartNewRound” and “ReceivedAnswer”
 We have to limit the number of messages that we keep queued locally to avoid runaway memory consumption, but the protocol imposes some rules about the priority of these messages:
-We must always ensure that we broadcast the 2 most recent StartNewRound messages
-We only need to ensure that we broadcast only the most recent ReceivedAnswer message
-Any time that both a “StartNewRound” and a “ReceivedAnswer” are queued, the “StartNewRound” message should be broadcasted first
-Any time that one of the subscribers of this system is busy and cannot receive a message immediately, we should just skip broadcasting to that subscriber
+
+    - We must always ensure that we broadcast the 2 most recent StartNewRound messages
+    - We only need to ensure that we broadcast only the most recent ReceivedAnswer message
+    - Any time that both a “StartNewRound” and a “ReceivedAnswer” are queued, the “StartNewRound” message should be broadcasted first
+    - Any time that one of the subscribers of this system is busy and cannot receive a message immediately, we should just skip broadcasting to that subscriber
 
 Don’t worry about writing actual networking code.  Instead, the MessageRelayer should simply read messages from an interface given to its constructor:
 
