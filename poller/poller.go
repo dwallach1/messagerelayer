@@ -32,10 +32,10 @@ func (mp MessagePoller) Start(ctx context.Context, msgRelayer relayer.Relayer) {
 			log.Println("reading new message...")
 			msg, err := msgRelayer.Read()
 			if err != nil {
-				log.Printf("unable to process message: %v\n", err)
+				log.Printf("unable to process message: %v", err)
 				break
 			}
-			log.Printf("got new message of type %v: %v\n", msg.Type, string(msg.Data))
+			log.Printf("got new message of type %v: %v", msg.Type, string(msg.Data))
 			msgRelayer.Enqueue(msg)
 		case <-ctx.Done():
 			log.Println("closing poller")
