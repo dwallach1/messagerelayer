@@ -23,6 +23,7 @@ To handle addtional load, we could introduce multiplicity across relayers and po
 1. give the poller a pool of relayers where each relayer has the same copy of the list of subscribers. The poller then adds the incoming 
 message to a round-robin selected relayer. I did an example of this: https://github.com/dwallach1/messagerelayer/pull/2
 2. use a "manager" concept that holds the queues that multiple relayers can read from and each relayer pops a message when it becomes available to do so
+3. Use a DB to store the pruned messages when we resize the array, then read and remove them from the DB during low load and emit the messages when resources permit (this assuming that the delivery time is not a hard requirement and subscribers still want older messages).
 
 ## Objective
 
