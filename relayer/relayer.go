@@ -176,7 +176,7 @@ func (mr *MessageRelayer) Start(ctx context.Context) {
 				mr.broacast(*recievedAnsMsg)
 			}
 			mr.skippedMsgCount += mr.recievedAnswerQueue.Resize()
-			mr.startRoundQueue.Resize()
+			mr.skippedMsgCount += mr.startRoundQueue.Resize()
 			time.Sleep(BroadcastInterval)
 		}
 	}
